@@ -8,6 +8,8 @@ import shutil
 import zipfile
 import json
 import re
+import requests
+import subprocess
 
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -157,7 +159,7 @@ class Ui_MiconLauncherWindow(object):
 
         
         self.RemoveButton = QPushButton("Remove Selected", self.MinecraftOptionsComment)
-        self.RemoveButton.setGeometry(QRect(460, 80, 120, 25))  # Adjust as needed
+        self.RemoveButton.setGeometry(QRect(460, 80, 120, 25))  
         self.RemoveButton.clicked.connect(MiconLauncherWindow.remove_selected_rows)
         
 
@@ -348,7 +350,7 @@ class Ui_MiconLauncherWindow(object):
 
 
 
-### ----- Some stuff i dont understand to translate the text or something ----- ###
+### ----- Some stuff i dont understand to translate the text or something made by Qt Designer ----- ###
         self.retranslateUi(MiconLauncherWindow)
 
         self.Tabs.setCurrentIndex(0)
@@ -407,6 +409,9 @@ class Ui_MiconLauncherWindow(object):
     # retranslateUi
 
 
+
+
+### ----- Class for the ModsTable ----- ###
 class DragDropTable(QTableWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -453,7 +458,6 @@ class DragDropTable(QTableWidget):
                                 if version_match:
                                     version = version_match.group(1)
                                 break
-                            # Try next block
                             content = content[match.end():]
                             match = re.search(r'\[\[dependencies\..*?\]\](.*?)\n\s*\n', content, re.DOTALL)
 
@@ -480,7 +484,6 @@ class DragDropTable(QTableWidget):
                 return "Unknown"
 
         except Exception as e:
-            print(f"Error reading jar file: {e}")
             return None
     
 
@@ -505,11 +508,6 @@ class DragDropTable(QTableWidget):
                     self.setItem(row, 3, QTableWidgetItem(file_type))
                     self.setItem(row, 4, QTableWidgetItem(minecraft_modloader))
 
-                    # Copy the file to a 'mods' folder
-                    desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-                    target_folder = os.path.join(desktop, "MiconLauncher_Mods")
-                    os.makedirs(target_folder, exist_ok=True)
-                    shutil.copy(file_path, os.path.join(target_folder, file_name))
     
     
 
@@ -517,8 +515,19 @@ class DragDropTable(QTableWidget):
 
     
 
-# Main function
+### ----- Main class ----- ###
 class MiconLauncher(QtWidgets.QMainWindow):
+    def download_and_run(url, save_path):
+            # Download the file
+            response = requests.get(url, stream=True)
+            with open(save_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            print(f"Downloaded to: {save_path}")
+
+            # Run the file
+            subprocess.run([save_path], check=True)
+            
     def remove_selected_rows(self):
             selected_rows = set()
             for idx in self.ui.ModsTable.selectedIndexes():
@@ -531,49 +540,97 @@ class MiconLauncher(QtWidgets.QMainWindow):
         complete_folder_path = os.path.join(target_folder, base_folder_name)
         counter = 1
 
-        # Add a suffix if the folder already exists
         while os.path.exists(complete_folder_path):
             complete_folder_path = os.path.join(target_folder, f"{base_folder_name}_{counter}")
             counter += 1
-
-        # Now create the uniquely named folder
+        
         os.makedirs(complete_folder_path)
+        
+        
+
+        # Example usage
+        self.download_and_run(
+            "https://example.com/somefile.exe",
+            "C:/Users/YourName/Downloads/somefile.exe"
+        )
+        
+        mod_folder_name = "mods"
+        complete_modfolder_path = os.path.join(complete_folder_path, mod_folder_name)
+        
+        os.makedirs(complete_modfolder_path)
     
         for row in range(Widget_table.rowCount()):
-            item = Widget_table.item(row, 2)  # column 2 = file_path
+            item = Widget_table.item(row, 2)
             if item:
                 file_path = item.text()
-                if os.path.isfile(file_path):  # Ensure it's a valid file
+                if os.path.isfile(file_path):
                     try:
-                        shutil.copy(file_path, complete_folder_path)
-                        QMessageBox.information(self, "Done", "Files have been copied successfully.")
+                        shutil.copy(file_path, complete_modfolder_path)
+                        QMessageBox.information(self, "Done", "Server has been created successfully.")
                     except Exception as e:
-                        print(f"Failed to copy {file_path}: {e}")
+                        QMessageBox.warning(self, "Error", "Failed to create server.")
 
     def startCreating(self):
-        selected_version = self.ui.MinecraftVersionAuswahl_1.currentText()
+        if self.ui.ForgeSelect.isChecked():
+            selected_version = "Forge " + self.ui.MinecraftVersionAuswahl_1.currentText()
+        elif self.ui.FabricSelect.isChecked():
+            selected_version = "Fabric " + self.ui.MinecraftVersionAuswahl_1.currentText()
+        elif self.ui.VanillaSelect.isChecked():
+            selected_version = "Vanilla " + self.ui.MinecraftVersionAuswahl_1.currentText()
+        
         for row in range(self.ui.ModsTable.rowCount()):
             file_path = self.ui.ModsTable.item(row, 2).text()
             self.tble = DragDropTable()
             detected_version = self.tble.get_minecraft_version_from_jar(file_path)
         
-            if detected_version != selected_version and detected_version != "Unknown":
-                QMessageBox.warning(self, "Version Mismatch",
-                    f"File '{file_path}' may be for version {detected_version}, not {selected_version}.")
-                return  # Stop or ask to continue
+            if selected_version != "Vanilla " + self.ui.MinecraftVersionAuswahl_1.currentText():
+                if detected_version != selected_version and detected_version != "Unknown":
+                    QMessageBox.warning(self, "Version Mismatch",
+                        f"File '{file_path}' may be for version {detected_version}, not {selected_version}.")
+                    return
+    
             
-        folder_copy_name = self.ui.FolderNameEdit_1.toPlainText()
-        folder_copy_path = self.ui.FolderPathText_1.text()
-        if not folder_copy_path:
-            QMessageBox.warning(self, "No folder", "Please select a target folder.")
-            return
+            
+        if selected_version != "Vanilla " + self.ui.MinecraftVersionAuswahl_1.currentText():
+            folder_copy_name = self.ui.FolderNameEdit_1.toPlainText()
+            folder_copy_path = self.ui.FolderPathText_1.text()
+            if not folder_copy_path:
+                QMessageBox.warning(self, "No folder", "Please select a target folder.")
+                return
 
-        os.makedirs(folder_copy_path, exist_ok=True)
+            os.makedirs(folder_copy_path, exist_ok=True)
 
-        if os.path.isdir(folder_copy_path):
-            self.copy_files_from_table(self.ui.ModsTable, folder_copy_name, folder_copy_path)
+            if os.path.isdir(folder_copy_path):
+                self.copy_files_from_table(self.ui.ModsTable, folder_copy_name, folder_copy_path)
+            else:
+                QMessageBox.warning(self, "Error", "Invalid target folder.")
         else:
-            print("Invalid target folder.")
+            folder_copy_name = self.ui.FolderNameEdit_1.toPlainText()
+            folder_copy_path = self.ui.FolderPathText_1.text()
+            if not folder_copy_path:
+                QMessageBox.warning(self, "No folder", "Please select a target folder.")
+                return
+
+            os.makedirs(folder_copy_path, exist_ok=True)
+            
+            if os.path.isdir(folder_copy_path):
+                base_folder_name = folder_copy_name.strip()
+                complete_folder_path = os.path.join(folder_copy_path, base_folder_name)
+                counter = 1
+
+                # Add a suffix if the folder already exists
+                while os.path.exists(complete_folder_path):
+                    complete_folder_path = os.path.join(folder_copy_path, f"{base_folder_name}_{counter}")
+                    counter += 1
+
+                # Now create the uniquely named folder
+                os.makedirs(complete_folder_path)
+                QMessageBox.information(self, "Done", "Server has been created successfully.")
+            else:
+                QMessageBox.warning(self, "Error", "Invalid target folder.")
+            
+            
+            
 
         
 
